@@ -15,18 +15,16 @@ impl Chip {
 		}
 	}
 
-	pub fn shr(mut self, rhs: u8) -> Self {
+	pub fn shr(&mut self, rhs: u8) {
 		for i in 0..self.size.y as usize {
 			self.raw_map[i] >>= rhs;
 		}
-		return self
 	}
 
-	pub fn shl(mut self, rhs: u8) -> Self {
+	pub fn shl(&mut self, rhs: u8) {
 		for i in 0..self.size.y as usize {
 			self.raw_map[i] <<= rhs;
 		}
-		return self
 	}
 }
 
@@ -38,15 +36,16 @@ impl Rotation<'_> {
 
 	pub fn cw90(&self) -> Chip {
 		let mut new_size = Vector2::<u8>::new(self.chip.size.y, self.chip.size.x);
-		let mut new_map = Vec::<u8>::with_capacity(new_size.y as usize);
+		let mut new_map = vec![0; new_size.y as usize];
 		for i in 0..self.chip.size.x as u8 {
-			let bit_reader = 0b1 << i;
+			let bit_reader = 0b10000000 >> i;
 			let mut bits = 0b0;
-			for j in (0..self.chip.size.y as usize).rev() {
-				bits &= (self.chip.raw_map[j] & bit_reader) >> i;
-				bits <<= 1;
+			for j in 0..self.chip.size.y as usize {
+				let a = (self.chip.raw_map[j] & bit_reader) >> (7 - i) << 7;
+				bits |= a;
+				bits >>= 1;
 			}
-			new_map[i as usize] = bits;
+			new_map[i as usize] = bits << 1;
 		}
 		Chip {
 			size: new_size,
@@ -70,8 +69,13 @@ impl Rotation<'_> {
 	pub fn cw270(&self) -> Chip {
 		self.cw90().rotate().cw180()
 	}
+
+	pub fn cache(&self) -> ChipRotationCache {
+		ChipRotationCache::new(self)
+	}
 }
 
+#[derive(Clone)]
 pub struct ChipRotationCache {
 	pub cw0: Chip,
 	pub cw90: Chip,

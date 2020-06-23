@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/../chipcalc_native_rust\examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/../chipcalc_native_rust\tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/../chipcalc_native_rust\benches" isTestSource="true" />
-      <excludeFolder url="file://$MODULE_DIR$/../chipcalc_native_rust\target" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
