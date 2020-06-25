@@ -23,8 +23,15 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(self) -> Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)> {
-		unimplemented!()
+	pub fn calculate(&self, max_left_space: u8) -> Vec<Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>> {
+		let result = calculate(&self.canvas, &self.chips, &self.base, max_left_space);
+		return if result.is_some() {
+			result.unwrap()
+		} else {
+			let mut result = Vec::new();
+			result.push(self.base.clone());
+			result
+		}
 	}
 }
 
@@ -60,7 +67,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 				| x | *x as *const ChipRotationCache == chip.unwrap() as *const ChipRotationCache
 			).unwrap();
 			chips.remove(pos);
-			calculate(
+			try_put(
 				&self.job.canvas,
 				chip.unwrap(),
 				| canvas, pos, rotation | {
@@ -81,15 +88,45 @@ impl <'a> Iterator for GenerateJob<'a> {
 	}
 }
 
-fn calculate(canvas: &Canvas, chip: &ChipRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool) {
-	let mut chip = chip.clone();
-	calculate_for_rotation(canvas, &mut chip, Cw0, | canvas, pos | on_put.call_mut((canvas, pos, Cw0)));
-	calculate_for_rotation(canvas, &mut chip, Cw90, | canvas, pos | on_put.call_mut((canvas, pos, Cw90)));
-	calculate_for_rotation(canvas, &mut chip, Cw180, | canvas, pos | on_put.call_mut((canvas, pos, Cw180)));
-	calculate_for_rotation(canvas, &mut chip, Cw270, | canvas, pos | on_put.call_mut((canvas, pos, Cw270)));
+fn calculate<'a>(canvas: &Canvas, chips: &VecDeque<&'a ChipRotationCache>, base: &Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>, max_left_space: u8) -> Option<Vec<Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>>> {
+	let mut result = Vec::new();
+	if canvas.get_left_space() <= max_left_space {
+		return None;
+	}
+	let mut chips = chips.clone();
+	let mut chip = chips.pop_back();
+	while chip.is_some() {
+		try_put(
+			canvas,
+			chip.unwrap(),
+			| canvas, position, rotation | {
+				let mut base = base.clone();
+				base.push((chip.unwrap(), position.clone(), rotation.clone()));
+				let r = calculate(&canvas, &chips, &base, max_left_space);
+				if r.is_some() {
+					result.append(&mut r.unwrap());
+				}
+				canvas.get_left_space() != 0
+			}
+		);
+		chip = chips.pop_back();
+	}
+	if result.is_empty() {
+		result.push(base.clone());
+		return Some(result);
+	}
+	Some(result)
 }
 
-fn calculate_for_rotation(canvas: &Canvas, chip: &mut ChipRotationCache, rotation: ChipRotation, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
+fn try_put(canvas: &Canvas, chip: &ChipRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool) {
+	let mut chip = chip.clone();
+	try_put_for_rotation(canvas, &mut chip, Cw0, |canvas, pos | on_put.call_mut((canvas, pos, Cw0)));
+	try_put_for_rotation(canvas, &mut chip, Cw90, |canvas, pos | on_put.call_mut((canvas, pos, Cw90)));
+	try_put_for_rotation(canvas, &mut chip, Cw180, |canvas, pos | on_put.call_mut((canvas, pos, Cw180)));
+	try_put_for_rotation(canvas, &mut chip, Cw270, |canvas, pos | on_put.call_mut((canvas, pos, Cw270)));
+}
+
+fn try_put_for_rotation(canvas: &Canvas, chip: &mut ChipRotationCache, rotation: ChipRotation, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
 	let chip = match rotation {
 		Cw0 => &mut chip.cw0,
 		Cw90 => &mut chip.cw90,
@@ -106,9 +143,9 @@ fn calculate_for_rotation(canvas: &Canvas, chip: &mut ChipRotationCache, rotatio
 			}
 			let mut new_canvas = canvas.clone();
 			let mut fit = true;
-			for i in y as usize..(chip.size.y + y) as usize {
-				if new_canvas.raw_map[i] & chip.raw_map[i] == 0b1 {
-					new_canvas.raw_map[i] |= chip.raw_map[i];
+			for i in 0..chip.size.y as usize {
+				if new_canvas.raw_map[i + y as usize] & chip.raw_map[i] == 0b0 {
+					new_canvas.raw_map[i + y as usize] |= chip.raw_map[i];
 				} else {
 					fit = false;
 					break;
