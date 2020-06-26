@@ -58,7 +58,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while self.cache.is_empty() {
-			let chip = self.chips.pop_back();
+			let chip = self.chips.pop_front();
 			if chip.is_none() {
 				return None;
 			}
@@ -84,7 +84,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 				}
 			)
 		}
-		self.cache.pop_back()
+		self.cache.pop_front()
 	}
 }
 
@@ -94,7 +94,7 @@ fn calculate<'a>(canvas: &Canvas, chips: &VecDeque<&'a ChipRotationCache>, base:
 		return None;
 	}
 	let mut chips = chips.clone();
-	let mut chip = chips.pop_back();
+	let mut chip = chips.pop_front();
 	while chip.is_some() {
 		try_put(
 			canvas,
@@ -109,7 +109,7 @@ fn calculate<'a>(canvas: &Canvas, chips: &VecDeque<&'a ChipRotationCache>, base:
 				canvas.get_left_space() != 0
 			}
 		);
-		chip = chips.pop_back();
+		chip = chips.pop_front();
 	}
 	if result.is_empty() {
 		result.push(base.clone());
