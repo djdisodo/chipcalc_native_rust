@@ -75,7 +75,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 					base.push((chip.unwrap(), pos, rotation));
 					self.cache.push_back(
 					CalculationJob::new(
-						self.job.canvas.clone(),
+						canvas,
 						chips.clone(),
 							base
 						)
