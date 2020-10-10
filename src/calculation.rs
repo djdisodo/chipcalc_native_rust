@@ -6,16 +6,26 @@ use std::collections::VecDeque;
 
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
-	chips: VecDeque<&'a ChipRotationCache>,
-	base: Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>
+	all_chips: &'a Vec<ChipRotationCache>,
+	chips: VecDeque<usize>,
+	base: Vec<(usize, Vector2<u8>, ChipRotation)>,
+	config: Config
 }
 
 impl <'a> CalculationJob<'a> {
-	pub fn new(canvas: Canvas, chips: VecDeque<&'a ChipRotationCache>, base: Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>) -> Self {
+	pub fn new(
+		canvas: Canvas,
+		all_chips: &'a Vec<ChipRotationCache>,
+		chips: VecDeque<usize>,
+		base: Vec<(usize, Vector2<u8>, ChipRotation)>,
+		config: Config
+	) -> Self {
 		Self {
 			canvas,
+			all_chips,
 			chips,
-			base
+			base,
+			config
 		}
 	}
 
@@ -23,8 +33,8 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self, max_left_space: u8) -> Vec<Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>> {
-		let result = calculate(&self.canvas, &self.chips, &self.base, max_left_space);
+	pub fn calculate(&self, max_left_space: u8) -> Vec<Vec<(usize, Vector2<u8>, ChipRotation)>> {
+		let result = calculate(&self.canvas, self.all_chips, &self.chips, &self.base, &self.config);
 		return if result.is_some() {
 			result.unwrap()
 		} else {
@@ -37,8 +47,8 @@ impl <'a> CalculationJob<'a> {
 
 pub struct GenerateJob<'a> {
 	job: &'a CalculationJob<'a>,
-	chips: VecDeque<&'a ChipRotationCache>,
-	chips_base: VecDeque<&'a ChipRotationCache>,
+	chips: VecDeque<usize>,
+	chips_base: VecDeque<usize>,
 	cache: VecDeque<CalculationJob<'a>>
 }
 
@@ -58,58 +68,66 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while self.cache.is_empty() {
-			let chip = self.chips.pop_back();
+			let chip = self.chips.pop_front();
 			if chip.is_none() {
 				return None;
 			}
 			let mut chips = self.chips_base.clone();
-			let pos = chips.iter().position(
-				| x | *x as *const ChipRotationCache == chip.unwrap() as *const ChipRotationCache
-			).unwrap();
-			chips.remove(pos);
+			chips.remove(chip.unwrap());
+			let rotate = self.job.config.rotate;
 			try_put(
 				&self.job.canvas,
-				chip.unwrap(),
+				self.job.all_chips.get(chip.unwrap()).unwrap(),
 				| canvas, pos, rotation | {
 					let mut base = self.job.base.clone();
 					base.push((chip.unwrap(), pos, rotation));
 					self.cache.push_back(
-					CalculationJob::new(
-						canvas,
-						chips.clone(),
-							base
-						)
+						CalculationJob::new(
+							canvas,
+							self.job.all_chips,
+							chips.clone(),
+							base,
+							self.job.config
+						),
 					);
 					true
-				}
+				},
+				rotate
 			)
 		}
-		self.cache.pop_back()
+		self.cache.pop_front()
 	}
 }
 
-fn calculate<'a>(canvas: &Canvas, chips: &VecDeque<&'a ChipRotationCache>, base: &Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>, max_left_space: u8) -> Option<Vec<Vec<(&'a ChipRotationCache, Vector2<u8>, ChipRotation)>>> {
+fn calculate<'a>(
+	canvas: &Canvas,
+	all_chips: &'a Vec<ChipRotationCache>,
+	chips: &VecDeque<usize>,
+	base: &Vec<(usize, Vector2<u8>, ChipRotation)>,
+	config: &Config
+) -> Option<Vec<Vec<(usize, Vector2<u8>, ChipRotation)>>> {
 	let mut result = Vec::new();
-	if canvas.get_left_space() <= max_left_space {
+	if canvas.get_left_space() <= config.max_left_space {
 		return None;
 	}
 	let mut chips = chips.clone();
-	let mut chip = chips.pop_back();
+	let mut chip = chips.pop_front();
 	while chip.is_some() {
 		try_put(
 			canvas,
-			chip.unwrap(),
+			all_chips.get(chip.unwrap()).unwrap(),
 			| canvas, position, rotation | {
 				let mut base = base.clone();
 				base.push((chip.unwrap(), position.clone(), rotation.clone()));
-				let r = calculate(&canvas, &chips, &base, max_left_space);
+				let r = calculate(&canvas, all_chips, &chips, &base, config);
 				if r.is_some() {
 					result.append(&mut r.unwrap());
 				}
 				canvas.get_left_space() != 0
-			}
+			},
+			config.rotate
 		);
-		chip = chips.pop_back();
+		chip = chips.pop_front();
 	}
 	if result.is_empty() {
 		result.push(base.clone());
@@ -118,12 +136,15 @@ fn calculate<'a>(canvas: &Canvas, chips: &VecDeque<&'a ChipRotationCache>, base:
 	Some(result)
 }
 
-fn try_put(canvas: &Canvas, chip: &ChipRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool) {
+fn try_put(canvas: &Canvas, chip: &ChipRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool, rotate: bool) {
 	let mut chip = chip.clone();
 	try_put_for_rotation(canvas, &mut chip, Cw0, |canvas, pos | on_put.call_mut((canvas, pos, Cw0)));
-	try_put_for_rotation(canvas, &mut chip, Cw90, |canvas, pos | on_put.call_mut((canvas, pos, Cw90)));
-	try_put_for_rotation(canvas, &mut chip, Cw180, |canvas, pos | on_put.call_mut((canvas, pos, Cw180)));
-	try_put_for_rotation(canvas, &mut chip, Cw270, |canvas, pos | on_put.call_mut((canvas, pos, Cw270)));
+	if rotate {
+		try_put_for_rotation(canvas, &mut chip, Cw90, |canvas, pos | on_put.call_mut((canvas, pos, Cw90)));
+		try_put_for_rotation(canvas, &mut chip, Cw180, |canvas, pos | on_put.call_mut((canvas, pos, Cw180)));
+		try_put_for_rotation(canvas, &mut chip, Cw270, |canvas, pos | on_put.call_mut((canvas, pos, Cw270)));
+	}
+
 }
 
 fn try_put_for_rotation(canvas: &Canvas, chip: &mut ChipRotationCache, rotation: ChipRotation, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
@@ -170,4 +191,10 @@ pub enum ChipRotation {
 	Cw90,
 	Cw180,
 	Cw270
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Config {
+	pub max_left_space: u8,
+	pub rotate: bool
 }
