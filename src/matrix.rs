@@ -3,12 +3,12 @@ use bit_reverse::LookupReverse;
 use std::ops::Shr;
 
 #[derive(Clone)]
-pub struct Chip {
+pub struct Matrix {
 	pub size: Vector2<u8>,
 	pub raw_map: Vec<u8>
 }
 
-impl Chip {
+impl Matrix {
 	pub fn rotate(&self) -> Rotation {
 		Rotation {
 			chip: self
@@ -29,12 +29,12 @@ impl Chip {
 }
 
 pub struct Rotation<'a> {
-	chip: &'a Chip
+	chip: &'a Matrix
 }
 
 impl Rotation<'_> {
 
-	pub fn cw90(&self) -> Chip {
+	pub fn cw90(&self) -> Matrix {
 		let mut new_size = Vector2::<u8>::new(self.chip.size.y, self.chip.size.x);
 		let mut new_map = vec![0; new_size.y as usize];
 		for i in 0..self.chip.size.x as u8 {
@@ -47,43 +47,43 @@ impl Rotation<'_> {
 			}
 			new_map[i as usize] = bits << 1;
 		}
-		Chip {
+		Matrix {
 			size: new_size,
 			raw_map: new_map
 		}
 	}
 
-	pub fn cw180(&self) -> Chip {
+	pub fn cw180(&self) -> Matrix {
 		let mut new_map = self.chip.raw_map.clone();
 		new_map.reverse();
 		for i in 0..self.chip.size.y as usize {
 			new_map[i] = new_map[i].swap_bits();
 			new_map[i] <<= 8 - self.chip.size.x;
 		}
-		Chip {
+		Matrix {
 			size: self.chip.size.clone(),
 			raw_map: new_map
 		}
 	}
 
-	pub fn cw270(&self) -> Chip {
+	pub fn cw270(&self) -> Matrix {
 		self.cw90().rotate().cw180()
 	}
 
-	pub fn cache(&self) -> ChipRotationCache {
-		ChipRotationCache::new(self)
+	pub fn cache(&self) -> MatrixRotationCache {
+		MatrixRotationCache::new(self)
 	}
 }
 
 #[derive(Clone)]
-pub struct ChipRotationCache {
-	pub cw0: Chip,
-	pub cw90: Chip,
-	pub cw180: Chip,
-	pub cw270: Chip,
+pub struct MatrixRotationCache {
+	pub cw0: Matrix,
+	pub cw90: Matrix,
+	pub cw180: Matrix,
+	pub cw270: Matrix,
 }
 
-impl ChipRotationCache {
+impl MatrixRotationCache {
 	pub fn new(rotation: &Rotation) -> Self {
 		Self {
 			cw0: rotation.chip.clone(),

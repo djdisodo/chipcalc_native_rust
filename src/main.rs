@@ -1,6 +1,6 @@
 #![feature(fn_traits)]
 
-use crate::chip::{Chip, ChipRotationCache};
+use crate::matrix::{Matrix, MatrixRotationCache};
 use crate::vector2::Vector2;
 use crate::canvas::Canvas;
 use crate::calculation::CalculationJob;
@@ -10,13 +10,13 @@ use crate::calculation::Config;
 
 pub mod vector2;
 pub mod canvas;
-pub mod chip;
+pub mod matrix;
 pub mod calculation;
 pub mod num_queue;
 
 fn main() {
 	let chips = vec![
-		Chip {
+		Matrix {
 			size: Vector2::new(4, 3),
 			raw_map: vec![
 				0b11110000,
@@ -24,14 +24,14 @@ fn main() {
 				0b10000000
 			]
 		},
-		Chip {
+		Matrix {
 			size: Vector2::new(1, 2),
 			raw_map: vec![
 				0b10000000,
 				0b10000000
 			]
 		},
-		Chip {
+		Matrix {
 			size: Vector2::new(1, 2),
 			raw_map: vec![
 				0b10000000,

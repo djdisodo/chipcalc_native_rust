@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 bit_reverse = "0.1.8"
+num-traits = "0.2"
+num-derive = "0.2"

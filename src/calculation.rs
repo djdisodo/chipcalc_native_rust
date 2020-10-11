@@ -1,12 +1,12 @@
 use crate::canvas::Canvas;
-use crate::chip::{Chip, ChipRotationCache};
+use crate::matrix::{Matrix, MatrixRotationCache};
 use crate::vector2::Vector2;
 use crate::calculation::ChipRotation::{Cw0, Cw180, Cw90, Cw270};
 use std::collections::VecDeque;
 
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
-	all_chips: &'a Vec<ChipRotationCache>,
+	all_chips: &'a Vec<MatrixRotationCache>,
 	chips: VecDeque<usize>,
 	base: Vec<(usize, Vector2<u8>, ChipRotation)>,
 	config: Config
@@ -15,7 +15,7 @@ pub struct CalculationJob<'a> {
 impl <'a> CalculationJob<'a> {
 	pub fn new(
 		canvas: Canvas,
-		all_chips: &'a Vec<ChipRotationCache>,
+		all_chips: &'a Vec<MatrixRotationCache>,
 		chips: VecDeque<usize>,
 		base: Vec<(usize, Vector2<u8>, ChipRotation)>,
 		config: Config
@@ -101,7 +101,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 fn calculate<'a>(
 	canvas: &Canvas,
-	all_chips: &'a Vec<ChipRotationCache>,
+	all_chips: &'a Vec<MatrixRotationCache>,
 	chips: &VecDeque<usize>,
 	base: &Vec<(usize, Vector2<u8>, ChipRotation)>,
 	config: &Config
@@ -136,7 +136,7 @@ fn calculate<'a>(
 	Some(result)
 }
 
-fn try_put(canvas: &Canvas, chip: &ChipRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool, rotate: bool) {
+fn try_put(canvas: &Canvas, chip: &MatrixRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool, rotate: bool) {
 	let mut chip = chip.clone();
 	try_put_for_rotation(canvas, &mut chip, Cw0, |canvas, pos | on_put.call_mut((canvas, pos, Cw0)));
 	if rotate {
@@ -147,7 +147,7 @@ fn try_put(canvas: &Canvas, chip: &ChipRotationCache, mut on_put: impl FnMut(Can
 
 }
 
-fn try_put_for_rotation(canvas: &Canvas, chip: &mut ChipRotationCache, rotation: ChipRotation, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
+fn try_put_for_rotation(canvas: &Canvas, chip: &mut MatrixRotationCache, rotation: ChipRotation, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
 	let chip = match rotation {
 		Cw0 => &mut chip.cw0,
 		Cw90 => &mut chip.cw90,
@@ -197,4 +197,115 @@ pub enum ChipRotation {
 pub struct Config {
 	pub max_left_space: u8,
 	pub rotate: bool
+}
+
+pub fn bytemap_to_bitmap(input: &[[bool; 8]]) -> Vec<Vec<u8>> {
+	unimplemented!()
+}
+
+pub enum Board {
+	NameBGM71,
+	NameAGS30,
+	Name2B14,
+	NameM2,
+	NameAT4,
+	NameQLZ04,
+	NameMk153
+}
+
+impl Board {
+	pub fn to_canvas(&self, level: u8) -> Canvas {
+		let mut map: [[u8; 8]; 8] = match self {
+			Board::NameBGM71 => [
+				[6, 6, 6, 6, 6, 6, 6, 6],
+				[6, 4, 4, 4, 3, 3, 3, 6],
+				[6, 4, 1, 1, 1, 1, 2, 6],
+				[6, 2, 1, 1, 1, 1, 2, 6],
+				[6, 2, 1, 1, 1, 1, 2, 6],
+				[6, 2, 1, 1, 1, 1, 5, 6],
+				[6, 3, 3, 3, 5, 5, 5, 6],
+				[6, 6, 6, 6, 6, 6, 6, 6]
+			],
+			Board::NameAGS30 => [
+				[6, 6, 5, 5, 6, 6, 6, 6],
+				[6, 3, 3, 2, 2, 6, 6, 6],
+				[4, 3, 1, 1, 1, 1, 6, 6],
+				[4, 2, 1, 1, 1, 1, 2, 6],
+				[6, 2, 1, 1, 1, 1, 2, 4],
+				[6, 6, 1, 1, 1, 1, 3, 4],
+				[6, 6, 6, 2, 2, 3, 3, 6],
+				[6, 6, 6, 6, 5, 5, 6, 6]
+			],
+			Board::Name2B14 => [
+				[6, 6, 6, 6, 6, 6, 6, 6],
+				[6, 6, 5, 6, 6, 5, 6, 6],
+				[6, 2, 1, 1, 1, 1, 3, 6],
+				[4, 2, 1, 1, 1, 1, 3, 4],
+				[4, 2, 1, 1, 1, 1, 3, 4],
+				[6, 2, 1, 1, 1, 1, 3, 6],
+				[6, 6, 5, 6, 6, 5, 6, 6],
+				[6, 6, 6, 6, 6, 6, 6, 6]
+			],
+			Board::NameM2 => [
+				[5, 3, 3, 6, 6, 6, 6, 5],
+				[6, 3, 1, 1, 6, 6, 2, 4],
+				[6, 6, 1, 1, 6, 2, 2, 4],
+				[6, 6, 1, 1, 1, 1, 2, 6],
+				[6, 2, 1, 1, 1, 1, 6, 6],
+				[4, 2, 2, 6, 1, 1, 6, 6],
+				[4, 2, 6, 6, 1, 1, 3, 6],
+				[5, 6, 6, 6, 6, 3, 3, 5]
+			],
+			Board::NameAT4 => [
+				[6, 6, 6, 1, 1, 6, 6, 6],
+				[6, 6, 1, 1, 1, 1, 6, 6],
+				[6, 1, 1, 1, 1, 1, 1, 6],
+				[2, 1, 1, 6, 6, 1, 1, 3],
+				[2, 2, 2, 6, 6, 3, 3, 3],
+				[6, 2, 2, 4, 4, 3, 3, 6],
+				[6, 6, 5, 4, 4, 5, 6, 6],
+				[6, 6, 6, 5, 5, 6, 6, 6]
+			],
+			Board::NameQLZ04 => [
+				[6, 6, 6, 6, 6, 6, 6, 6],
+				[5, 3, 6, 6, 6, 6, 3, 5],
+				[5, 3, 3, 6, 6, 3, 3, 5],
+				[4, 1, 1, 1, 1, 1, 1, 4],
+				[4, 1, 1, 1, 1, 1, 1, 4],
+				[6, 1, 1, 2, 2, 1, 1, 6],
+				[6, 6, 2, 2, 2, 2, 6, 6],
+				[6, 6, 6, 2, 2, 6, 6, 6]
+			],
+			Board::NameMk153 => [
+				[6, 6, 2, 2, 6, 6, 6, 6],
+				[6, 6, 2, 2, 5, 5, 5, 6],
+				[6, 6, 2, 2, 4, 4, 4, 6],
+				[6, 6, 2, 2, 3, 3, 4, 6],
+				[1, 1, 1, 1, 1, 1, 3, 3],
+				[1, 1, 1, 1, 1, 1, 3, 3],
+				[6, 5, 1, 1, 6, 6, 6, 6],
+				[6, 6, 1, 1, 6, 6, 6, 6]
+			]
+		};
+
+		let mut canvas_base = vec![0xffu8; 8];
+
+		for y in 0..8 {
+			let mut base = 0;
+			for x in 0..8 {
+				base <<= 1;
+				if map[y][x] > level {
+					base |= 1;
+				} else {
+					base |= 0;
+				}
+			}
+			canvas_base[y] = base;
+		}
+
+		Canvas {
+			size: Vector2::new(8, 8),
+			raw_map: canvas_base
+		}
+	}
 }
