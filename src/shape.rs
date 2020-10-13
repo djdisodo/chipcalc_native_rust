@@ -1,10 +1,14 @@
-use std::cmp::Ordering;
-use num_derive::FromPrimitive;
-use crate::matrix::Matrix;
-use crate::vector2::Vector2;
+#![allow(non_camel_case_types)]
 
-#[allow(non_pascal_case)]
-#[derive(FromPrimitive, Clone, Copy)]
+use std::cmp::{Ordering, Ord};
+use num_derive::FromPrimitive;
+use crate::matrix::{Matrix, MatrixRotationCache};
+use crate::vector2::Vector2;
+use std::collections::HashMap;
+use enum_iterator::IntoEnumIterator;
+
+
+#[derive(FromPrimitive, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq)]
 pub enum Shape {
 	NONE = 0,
 	// 1 = A
@@ -128,23 +132,23 @@ impl Shape {
 		}
 	}
 
-	pub fn to_matrix(&self) -> Matrix {
+	pub fn get_matrix(&self) -> Matrix {
 		match self {
 			Shape::_1 => Matrix {
-				size: Vector2::new(1, 1),
+				x_size: 1,
 				raw_map: vec![
 					0b10000000
 				]
 			},
 			Shape::_2 => Matrix {
-				size: Vector2::new(1, 2),
+				x_size: 1,
 				raw_map: vec![
 					0b10000000,
 					0b10000000
 				]
 			},
 			Shape::_3_I => Matrix {
-				size: Vector2::new(1, 3),
+				x_size: 1,
 				raw_map: vec![
 					0b10000000,
 					0b10000000,
@@ -152,20 +156,20 @@ impl Shape {
 				]
 			},
 			Shape::_3_L => Matrix {
-				size: Vector2::new(2, 2),
+				x_size: 2,
 				raw_map: vec![
 					0b10000000,
 					0b11000000
 				]
 			},
 			Shape::_4_I => Matrix {
-				size: Vector2::new(4, 1),
+				x_size: 4,
 				raw_map: vec![
 					0b11110000
 				]
 			},
 			Shape::_4_L => Matrix {
-				size: Vector2::new(2, 3),
+				x_size: 2,
 				raw_map: vec![
 					0b10000000,
 					0b10000000,
@@ -173,55 +177,55 @@ impl Shape {
 				]
 			},
 			Shape::_4_Lm => Matrix {
-				size: Vector2::new(3, 2),
+				x_size: 3,
 				raw_map: vec![
 					0b10000000,
 					0b11100000
 				]
 			},
 			Shape::_4_O => Matrix {
-				size: Vector2::new(2, 2),
+				x_size: 2,
 				raw_map: vec![
 					0b11000000,
 					0b11000000
 				]
 			},
 			Shape::_4_T => Matrix {
-				size: Vector2::new(3, 2),
+				x_size: 3,
 				raw_map: vec![
 					0b01000000,
 					0b11100000
 				]
 			},
 			Shape::_4_Z => Matrix {
-				size: Vector2::new(3, 2),
+				x_size: 3,
 				raw_map: vec![
 					0b11000000,
 					0b01100000,
 				]
 			},
 			Shape::_4_Zm => Matrix {
-				size: Vector2::new(3, 2),
+				x_size: 3,
 				raw_map: vec![
 					0b01100000,
 					0b11000000
 				]
 			},
 			Shape::_5A_C => Matrix {
-				size: Vector2::new(3, 2),
+				x_size: 3,
 				raw_map: vec![
 					0b11100000,
 					0b10100000
 				]
 			},
 			Shape::_5A_I => Matrix {
-				size: Vector2::new(5, 1),
+				x_size: 5,
 				raw_map: vec![
 					0b11111000
 				]
 			},
 			Shape::_5A_L => Matrix {
-				size: Vector2::new(2, 4),
+				x_size: 2,
 				raw_map: vec![
 					0b10000000,
 					0b10000000,
@@ -230,7 +234,7 @@ impl Shape {
 				]
 			},
 			Shape::_5A_Lm => Matrix {
-				size: Vector2::new(2, 4),
+				x_size: 2,
 				raw_map: vec![
 					0b01000000,
 					0b01000000,
@@ -239,7 +243,7 @@ impl Shape {
 				]
 			},
 			Shape::_5A_P => Matrix {
-				size: Vector2::new(2, 3),
+				x_size: 2,
 				raw_map: vec![
 					0b01000000,
 					0b11000000,
@@ -247,7 +251,7 @@ impl Shape {
 				]
 			},
 			Shape::_5A_Pm => Matrix {
-				size: Vector2::new(2, 3),
+				x_size: 2,
 				raw_map: vec![
 					0b10000000,
 					0b11000000,
@@ -255,7 +259,7 @@ impl Shape {
 				]
 			},
 			Shape::_5A_V => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b10000000,
 					0b10000000,
@@ -263,7 +267,7 @@ impl Shape {
 				]
 			},
 			Shape::_5A_Z =>  Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b00100000,
 					0b11100000,
@@ -271,7 +275,7 @@ impl Shape {
 				]
 			},
 			Shape::_5A_Zm => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b10000000,
 					0b11100000,
@@ -279,7 +283,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_F => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b10000000,
 					0b11100000,
@@ -287,7 +291,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_Fm => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b00100000,
 					0b11100000,
@@ -295,7 +299,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_N => Matrix {
-				size: Vector2::new(2, 4),
+				x_size: 2,
 				raw_map: vec![
 					0b01000000,
 					0b11000000,
@@ -304,7 +308,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_Nm => Matrix {
-				size: Vector2::new(2, 4),
+				x_size: 2,
 				raw_map: vec![
 					0b10000000,
 					0b11000000,
@@ -313,7 +317,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_T => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b01000000,
 					0b01000000,
@@ -321,7 +325,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_W => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b01100000,
 					0b11000000,
@@ -329,7 +333,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_X => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b01000000,
 					0b11100000,
@@ -337,7 +341,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_Y => Matrix {
-				size: Vector2::new(2, 4),
+				x_size: 2,
 				raw_map: vec![
 					0b01000000,
 					0b11000000,
@@ -346,7 +350,7 @@ impl Shape {
 				]
 			},
 			Shape::_5B_Ym => Matrix {
-				size: Vector2::new(2, 4),
+				x_size: 2,
 				raw_map: vec![
 					0b10000000,
 					0b11000000,
@@ -355,7 +359,7 @@ impl Shape {
 				]
 			},
 			Shape::_6_A => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b10000000,
 					0b11000000,
@@ -363,27 +367,27 @@ impl Shape {
 				]
 			},
 			Shape::_6_C => Matrix {
-				size: Vector2::new(4, 2),
+				x_size: 4,
 				raw_map: vec![
 					0b10010000,
 					0b11110000
 				]
 			},
 			Shape::_6_D => Matrix {
-				size: Vector2::new(4, 2),
+				x_size: 4,
 				raw_map: vec![
 					0b01100000,
 					0b11110000
 				]
 			},
 			Shape::_6_I => Matrix {
-				size: Vector2::new(6, 1),
+				x_size: 6,
 				raw_map: vec![
 					0b11111100
 				]
 			},
 			Shape::_6_O => Matrix {
-				size: Vector2::new(2, 3),
+				x_size: 2,
 				raw_map: vec![
 					0b11000000,
 					0b11000000,
@@ -391,7 +395,7 @@ impl Shape {
 				]
 			},
 			Shape::_6_R => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b01000000,
 					0b11100000,
@@ -399,7 +403,7 @@ impl Shape {
 				]
 			},
 			Shape::_6_T => Matrix {
-				size: Vector2::new(4, 3),
+				x_size: 4,
 				raw_map: vec![
 					0b00100000,
 					0b11110000,
@@ -407,7 +411,7 @@ impl Shape {
 				]
 			},
 			Shape::_6_Y => Matrix {
-				size: Vector2::new(3, 3),
+				x_size: 3,
 				raw_map: vec![
 					0b01000000,
 					0b11100000,
@@ -415,14 +419,14 @@ impl Shape {
 				]
 			},
 			Shape::_6_Z => Matrix {
-				size: Vector2::new(4, 2),
+				x_size: 4,
 				raw_map: vec![
 					0b11100000,
 					0b01110000
 				]
 			},
 			Shape::_6_Zm => Matrix {
-				size: Vector2::new(4, 2),
+				x_size: 4,
 				raw_map: vec![
 					0b01110000,
 					0b11100000
@@ -431,4 +435,42 @@ impl Shape {
 			Shape::NONE => panic!()
 		}
 	}
+
+	pub fn get_rotation_cache(&self) -> &MatrixRotationCache {
+		&ROTATION_CACHE[(*self as usize) - 1]
+	}
+
+	pub fn get_max_rotation(&self) -> u8 {
+		MAX_ROTATION[*self as usize]
+	}
+
 }
+
+lazy_static::lazy_static! {
+pub static ref MAX_ROTATION: Vec<u8> = {
+	let mut map: Vec<u8> = Vec::with_capacity(40);
+	map.push(0);
+	for x in Shape::into_enum_iter() {
+		let x: Shape = x;
+		let cache = x.get_matrix().rotate().cache();
+		map.push(if cache.cw0 == cache.cw90 {
+			0
+		} else if cache.cw0 == cache.cw180 {
+			1
+		} else { 3 });
+	}
+	map
+};
+
+static ref ROTATION_CACHE: Vec<MatrixRotationCache> = {
+	let mut map: Vec<MatrixRotationCache> = Vec::with_capacity(39);
+	for x in Shape::into_enum_iter() {
+		let x: Shape = x;
+		map.push(x.get_matrix().rotate().cache());
+	}
+	map
+};
+
+}
+
+

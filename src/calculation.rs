@@ -1,23 +1,26 @@
 use crate::canvas::Canvas;
-use crate::matrix::{Matrix, MatrixRotationCache};
+use crate::matrix::{MatrixRotationCache, Matrix};
 use crate::vector2::Vector2;
-use crate::calculation::ChipRotation::{Cw0, Cw180, Cw90, Cw270};
+use crate::matrix::MatrixRotation::{Cw0, Cw180, Cw90, Cw270};
+use crate::matrix::MatrixRotation;
 use std::collections::VecDeque;
+use crate::chip::Chip;
+use crate::shape::Shape;
 
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
-	all_chips: &'a Vec<MatrixRotationCache>,
+	all_chips: &'a Vec<Chip>,
 	chips: VecDeque<usize>,
-	base: Vec<(usize, Vector2<u8>, ChipRotation)>,
+	base: Vec<(usize, Vector2<u8>, MatrixRotation)>,
 	config: Config
 }
 
 impl <'a> CalculationJob<'a> {
 	pub fn new(
 		canvas: Canvas,
-		all_chips: &'a Vec<MatrixRotationCache>,
+		all_chips: &'a Vec<Chip>,
 		chips: VecDeque<usize>,
-		base: Vec<(usize, Vector2<u8>, ChipRotation)>,
+		base: Vec<(usize, Vector2<u8>, MatrixRotation)>,
 		config: Config
 	) -> Self {
 		Self {
@@ -33,7 +36,7 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self, max_left_space: u8) -> Vec<Vec<(usize, Vector2<u8>, ChipRotation)>> {
+	pub fn calculate(&self) -> Vec<Vec<(usize, Vector2<u8>, MatrixRotation)>> {
 		let result = calculate(&self.canvas, self.all_chips, &self.chips, &self.base, &self.config);
 		return if result.is_some() {
 			result.unwrap()
@@ -101,11 +104,11 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 fn calculate<'a>(
 	canvas: &Canvas,
-	all_chips: &'a Vec<MatrixRotationCache>,
+	all_chips: &'a Vec<Chip>,
 	chips: &VecDeque<usize>,
-	base: &Vec<(usize, Vector2<u8>, ChipRotation)>,
+	base: &Vec<(usize, Vector2<u8>, MatrixRotation)>,
 	config: &Config
-) -> Option<Vec<Vec<(usize, Vector2<u8>, ChipRotation)>>> {
+) -> Option<Vec<Vec<(usize, Vector2<u8>, MatrixRotation)>>> {
 	let mut result = Vec::new();
 	if canvas.get_left_space() <= config.max_left_space {
 		return None;
@@ -136,37 +139,37 @@ fn calculate<'a>(
 	Some(result)
 }
 
-fn try_put(canvas: &Canvas, chip: &MatrixRotationCache, mut on_put: impl FnMut(Canvas, Vector2<u8>, ChipRotation) -> bool, rotate: bool) {
-	let mut chip = chip.clone();
-	try_put_for_rotation(canvas, &mut chip, Cw0, |canvas, pos | on_put.call_mut((canvas, pos, Cw0)));
+fn try_put(canvas: &Canvas, chip: &Chip, mut on_put: impl FnMut(Canvas, Vector2<u8>, MatrixRotation) -> bool, rotate: bool) {
+	let mut matrix_rotation_cache = chip.get_rotation_cache().clone();
+	let mut rot = *chip.get_initial_rotation();
+
 	if rotate {
-		try_put_for_rotation(canvas, &mut chip, Cw90, |canvas, pos | on_put.call_mut((canvas, pos, Cw90)));
-		try_put_for_rotation(canvas, &mut chip, Cw180, |canvas, pos | on_put.call_mut((canvas, pos, Cw180)));
-		try_put_for_rotation(canvas, &mut chip, Cw270, |canvas, pos | on_put.call_mut((canvas, pos, Cw270)));
+		for _ in 0..chip.get_max_rotation() {
+			rot.rotate_cw90();
+			__try_put(
+				canvas,
+				matrix_rotation_cache.get_mut(&rot),
+				|canvas, pos | on_put.call_mut((canvas, pos, rot))
+			);
+		}
 	}
 
 }
 
-fn try_put_for_rotation(canvas: &Canvas, chip: &mut MatrixRotationCache, rotation: ChipRotation, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
-	let chip = match rotation {
-		Cw0 => &mut chip.cw0,
-		Cw90 => &mut chip.cw90,
-		Cw180 => &mut chip.cw180,
-		Cw270 => &mut chip.cw270
-	};
+fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
 	for x in 0..canvas.size.x {
-		if chip.size.x + x > canvas.size.x {
+		if matrix.x_size + x > canvas.size.x {
 			break;
 		}
 		for y in 0..canvas.size.y {
-			if chip.size.y + y > canvas.size.y {
+			if (matrix.raw_map.len() as u8) + y > canvas.size.y {
 				break;
 			}
 			let mut new_canvas = canvas.clone();
 			let mut fit = true;
-			for i in 0..chip.size.y as usize {
-				if new_canvas.raw_map[i + y as usize] & chip.raw_map[i] == 0b0 {
-					new_canvas.raw_map[i + y as usize] |= chip.raw_map[i];
+			for i in 0..matrix.raw_map.len() {
+				if new_canvas.raw_map[i + y as usize] & matrix.raw_map[i] == 0b0 {
+					new_canvas.raw_map[i + y as usize] |= matrix.raw_map[i];
 				} else {
 					fit = false;
 					break;
@@ -179,28 +182,17 @@ fn try_put_for_rotation(canvas: &Canvas, chip: &mut MatrixRotationCache, rotatio
 				}
 			}
 		}
-		chip.shr(1);
+		matrix.shr(1);
 	}
 	return;
 }
 
 
-#[derive(Clone, Copy, Debug)]
-pub enum ChipRotation {
-	Cw0,
-	Cw90,
-	Cw180,
-	Cw270
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
 	pub max_left_space: u8,
 	pub rotate: bool
-}
-
-pub fn bytemap_to_bitmap(input: &[[bool; 8]]) -> Vec<Vec<u8>> {
-	unimplemented!()
 }
 
 pub enum Board {
@@ -215,7 +207,7 @@ pub enum Board {
 
 impl Board {
 	pub fn to_canvas(&self, level: u8) -> Canvas {
-		let mut map: [[u8; 8]; 8] = match self {
+		let map: [[u8; 8]; 8] = match self {
 			Board::NameBGM71 => [
 				[6, 6, 6, 6, 6, 6, 6, 6],
 				[6, 4, 4, 4, 3, 3, 3, 6],
