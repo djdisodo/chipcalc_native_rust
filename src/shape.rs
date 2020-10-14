@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use enum_iterator::IntoEnumIterator;
 
 
-#[derive(FromPrimitive, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq)]
+#[derive(FromPrimitive, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq, Debug)]
 pub enum Shape {
 	NONE = 0,
 	// 1 = A
@@ -64,8 +64,31 @@ impl PartialOrd for Type {
 
 impl Shape {
 	pub fn get_size(&self) -> usize {
-		let id: usize = *self as usize;
-		id - if 6 <= id { 1 } else { 0 }
+		/* for type let id: usize = *self as usize;
+		id - if 6 <= id { 1 } else { 0 } */
+		let id = *self as u8;
+		if 30 <= id {
+			return 6;
+		}
+		if 21 <= id {
+			return 5;
+		}
+		if 12 <= id {
+			return 5;
+		}
+		if 5 <= id {
+			return 4;
+		}
+		if 3 <= id {
+			return 3;
+		}
+		if 2 == id {
+			return 2;
+		}
+		if 1 == id {
+			return 1;
+		}
+		return 0;
 	}
 
 	const SHAPE_1: &'static [Shape] = &[Shape::_1];
@@ -441,17 +464,20 @@ impl Shape {
 	}
 
 	pub fn get_max_rotation(&self) -> u8 {
-		MAX_ROTATION[*self as usize]
+		MAX_ROTATION[(*self as usize) - 1]
 	}
 
 }
 
 lazy_static::lazy_static! {
 pub static ref MAX_ROTATION: Vec<u8> = {
-	let mut map: Vec<u8> = Vec::with_capacity(40);
+	let mut map: Vec<u8> = Vec::with_capacity(39);
 	map.push(0);
 	for x in Shape::into_enum_iter() {
 		let x: Shape = x;
+		if x == Shape::NONE {
+			continue;
+		}
 		let cache = x.get_matrix().rotate().cache();
 		map.push(if cache.cw0 == cache.cw90 {
 			0
@@ -466,6 +492,9 @@ static ref ROTATION_CACHE: Vec<MatrixRotationCache> = {
 	let mut map: Vec<MatrixRotationCache> = Vec::with_capacity(39);
 	for x in Shape::into_enum_iter() {
 		let x: Shape = x;
+		if x == Shape::NONE {
+			continue;
+		}
 		map.push(x.get_matrix().rotate().cache());
 	}
 	map

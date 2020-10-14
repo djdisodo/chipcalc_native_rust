@@ -11,7 +11,7 @@ impl Canvas {
 		let mut left_space: u8 = 0;
 		for x in &self.raw_map {
 			for i in 0..8 {
-				left_space += (!x >> i) & 0x00000001;
+				left_space += ((!x >> i) & 0x00000001);
 			}
 		}
 		left_space

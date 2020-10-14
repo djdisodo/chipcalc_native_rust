@@ -9,6 +9,13 @@ pub struct Chip {
 }
 
 impl Chip {
+	pub fn new(shape: Shape, initial_rotation: MatrixRotation) -> Self {
+		Self {
+			shape,
+			initial_rotation
+		}
+	}
+
 	pub fn get_initial_rotation(&self) -> &MatrixRotation {
 		&self.initial_rotation
 	}

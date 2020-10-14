@@ -1,5 +1,6 @@
 use bit_reverse::LookupReverse;
 use std::mem::replace;
+use num_derive::FromPrimitive;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Matrix {
@@ -119,7 +120,7 @@ impl MatrixRotationCache {
 	}
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromPrimitive)]
 pub enum MatrixRotation {
 	Cw0 = 0,
 	Cw90 = 1,
