@@ -19,6 +19,8 @@ impl Chip {
 	pub fn get_initial_rotation(&self) -> &MatrixRotation {
 		&self.initial_rotation
 	}
+
+
 }
 
 impl Deref for Chip {
@@ -27,4 +29,10 @@ impl Deref for Chip {
 	fn deref(&self) -> &Self::Target {
 		&self.shape
 	}
+}
+
+#[derive(FromPrimitive, Clone, Copy)]
+pub enum Color {
+	Orange = 1,
+	Blue = 2
 }

@@ -6,6 +6,7 @@ use crate::matrix::{Matrix, MatrixRotationCache};
 use crate::vector2::Vector2;
 use std::collections::HashMap;
 use enum_iterator::IntoEnumIterator;
+use num_rational::Rational;
 
 
 #[derive(FromPrimitive, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq, Debug)]
@@ -49,6 +50,16 @@ impl Type {
 
 }
 
+impl Type {
+	pub fn get_size(&self) -> u8 {
+		let id: u8 = *self as u8;
+		id - if 6 <= id { 1 } else { 0 }
+	}
+	pub fn get_multiplier() -> Rational {
+		unimplemented!()
+	}
+}
+
 impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
 		self == other
@@ -64,8 +75,6 @@ impl PartialOrd for Type {
 
 impl Shape {
 	pub fn get_size(&self) -> usize {
-		/* for type let id: usize = *self as usize;
-		id - if 6 <= id { 1 } else { 0 } */
 		let id = *self as u8;
 		if 30 <= id {
 			return 6;
@@ -457,6 +466,32 @@ impl Shape {
 			},
 			Shape::NONE => panic!()
 		}
+	}
+
+	pub fn get_type(&self) -> Type {
+		let id = *self as u8;
+		if 30 <= id {
+			return Type::_6;
+		}
+		if 21 <= id {
+			return Type::_5B;
+		}
+		if 12 <= id {
+			return Type::_5A;
+		}
+		if 5 <= id {
+			return Type::_4;
+		}
+		if 3 <= id {
+			return Type::_3;
+		}
+		if 2 == id {
+			return Type::_2;
+		}
+		if 1 == id {
+			return Type::_1;
+		}
+		return Type::NONE;
 	}
 
 	pub fn get_rotation_cache(&self) -> &MatrixRotationCache {
