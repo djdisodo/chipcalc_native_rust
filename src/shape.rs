@@ -6,7 +6,7 @@ use crate::matrix::{Matrix, MatrixRotationCache};
 use crate::vector2::Vector2;
 use std::collections::HashMap;
 use enum_iterator::IntoEnumIterator;
-use num_rational::Rational;
+use num_rational::Rational32;
 
 
 #[derive(FromPrimitive, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq, Debug)]
@@ -55,8 +55,11 @@ impl Type {
 		let id: u8 = *self as u8;
 		id - if 6 <= id { 1 } else { 0 }
 	}
-	pub fn get_multiplier() -> Rational {
-		unimplemented!()
+	pub fn get_multiplier(&self, star: i32) -> Rational32 {
+		let a = if self.get_size() < 5 { 16 } else { 20 };
+		let b = if self.get_size() < 3 || self == Type::_5A { 4 } else { 0 };
+		let c  = if self.get_size() < 4 || self == Type::_5A { 4 } else { 0 };
+		Rational32::new_raw(star * a - b - (if 3 < star { c } else { 0 }), 100)
 	}
 }
 

@@ -1,10 +1,12 @@
 use crate::matrix::{MatrixRotationCache, MatrixRotation};
 use crate::shape::Shape;
 use std::ops::Deref;
+use num_rational::Rational32;
 
 pub struct Chip {
 	shape: Shape,
 	initial_rotation: MatrixRotation,
+	star: usize,
 	//todo stats
 }
 
@@ -21,6 +23,10 @@ impl Chip {
 	}
 
 
+	fn __get_stat(&self, rate: Rational32, pt: i32) -> u32 {
+		let base = (rate * self.get_type().get_multiplier(self.star as i32) * pt) as i32;
+		
+	}
 }
 
 impl Deref for Chip {
