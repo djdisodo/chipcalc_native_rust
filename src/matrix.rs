@@ -120,7 +120,7 @@ impl MatrixRotationCache {
 	}
 }
 
-#[derive(Clone, Copy, Debug, FromPrimitive)]
+#[derive(Clone, Copy, Debug, FromPrimitive, Eq, PartialEq)]
 pub enum MatrixRotation {
 	Cw0 = 0,
 	Cw90 = 1,

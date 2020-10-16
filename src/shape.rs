@@ -57,8 +57,8 @@ impl Type {
 	}
 	pub fn get_multiplier(&self, star: i32) -> Rational32 {
 		let a = if self.get_size() < 5 { 16 } else { 20 };
-		let b = if self.get_size() < 3 || self == Type::_5A { 4 } else { 0 };
-		let c  = if self.get_size() < 4 || self == Type::_5A { 4 } else { 0 };
+		let b = if self.get_size() < 3 || *self == Type::_5A { 4 } else { 0 };
+		let c  = if self.get_size() < 4 || *self == Type::_5A { 4 } else { 0 };
 		Rational32::new_raw(star * a - b - (if 3 < star { c } else { 0 }), 100)
 	}
 }

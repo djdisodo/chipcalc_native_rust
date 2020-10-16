@@ -7,12 +7,14 @@ use std::collections::VecDeque;
 use crate::chip::Chip;
 use crate::shape::Shape;
 use strum_macros::EnumString;
+use std::ops::{Deref, DerefMut};
+use crate::stat::Stat;
 
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
 	all_chips: &'a Vec<Chip>,
 	chips: VecDeque<usize>,
-	base: Vec<(usize, Vector2<u8>, MatrixRotation)>,
+	base: CalculationResult,
 	config: Config
 }
 
@@ -21,7 +23,7 @@ impl <'a> CalculationJob<'a> {
 		canvas: Canvas,
 		all_chips: &'a Vec<Chip>,
 		chips: VecDeque<usize>,
-		base: Vec<(usize, Vector2<u8>, MatrixRotation)>,
+		base: CalculationResult,
 		config: Config
 	) -> Self {
 		Self {
@@ -37,7 +39,7 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self) -> Vec<Vec<(usize, Vector2<u8>, MatrixRotation)>> {
+	pub fn calculate(&self) -> Vec<CalculationResult> {
 		let result = calculate(&self.canvas, self.all_chips, &self.chips, &self.base, &self.config);
 		return if result.is_some() {
 			result.unwrap()
@@ -68,20 +70,28 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while self.cache.is_empty() {
-			let chip = self.job.chips.pop_front();
-			if chip.is_none() {
+			let chip_index = self.job.chips.pop_front();
+			if chip_index.is_none() {
 				return None;
 			}
+			let chip = self.job.all_chips.get(chip_index.unwrap()).unwrap();
 			let mut chips = self.job.chips.clone();
 			let rotate = self.job.config.rotate;
 			let cache = &mut self.cache;
 			let job = &self.job;
 			try_put(
 				&self.job.canvas,
-				self.job.all_chips.get(chip.unwrap()).unwrap(),
+				chip,
 				| canvas, pos, rotation | {
 					let mut base = job.base.clone();
-					base.push((chip.unwrap(), pos, rotation));
+					base.push(CalculationResultChip {
+						chip_index: chip_index.unwrap(),
+						position: pos,
+						rotation
+					});
+					if chip.rotation != rotation {
+						base.correction_cost += chip.get_correction_cost();
+					}
 					cache.push_back(
 						CalculationJob::new(
 							canvas,
@@ -104,19 +114,28 @@ fn calculate<'a>(
 	canvas: &Canvas,
 	all_chips: &'a Vec<Chip>,
 	chips: &VecDeque<usize>,
-	base: &Vec<(usize, Vector2<u8>, MatrixRotation)>,
+	base: &CalculationResult,
 	config: &Config
-) -> Option<Vec<Vec<(usize, Vector2<u8>, MatrixRotation)>>> {
+) -> Option<Vec<CalculationResult>> {
 	let mut result = Vec::new();
 	let mut chips = chips.clone();
-	let mut chip = chips.pop_front();
-	while chip.is_some() {
+	let mut chip_index = chips.pop_front();
+
+	while chip_index.is_some() {
+		let chip = all_chips.get(chip_index.unwrap()).unwrap();
 		try_put(
 			canvas,
-			all_chips.get(chip.unwrap()).unwrap(),
+			chip,
 			| canvas, position, rotation | {
 				let mut base = base.clone();
-				base.push((chip.unwrap(), position.clone(), rotation.clone()));
+				base.push(CalculationResultChip {
+					chip_index: chip_index.unwrap(),
+					position,
+					rotation
+				});
+				if chip.rotation != rotation {
+					base.correction_cost += chip.get_correction_cost();
+				}
 				let r = calculate(&canvas, all_chips, &chips, &base, config);
 				if r.is_some() {
 					result.append(&mut r.unwrap());
@@ -125,7 +144,7 @@ fn calculate<'a>(
 			},
 			&config
 		);
-		chip = chips.pop_front();
+		chip_index = chips.pop_front();
 	}
 	if result.is_empty() {
 		result.push(base.clone());
@@ -136,7 +155,7 @@ fn calculate<'a>(
 
 fn try_put(canvas: &Canvas, chip: &Chip, mut on_put: impl FnMut(Canvas, Vector2<u8>, MatrixRotation) -> bool, config: &Config) {
 	let mut matrix_rotation_cache = chip.get_rotation_cache().clone();
-	let mut rot = *chip.get_initial_rotation();
+	let mut rot = *chip.get_rotation();
 
 	__try_put(
 		canvas,
@@ -308,4 +327,42 @@ impl Board {
 			raw_map: canvas_base
 		}
 	}
+}
+
+
+#[derive(Default, Clone)]
+pub struct CalculationResult {
+	pub chips: Vec<CalculationResultChip>,
+	pub correction_cost: usize
+}
+
+impl Deref for CalculationResult {
+	type Target = Vec<CalculationResultChip>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.chips
+	}
+}
+
+impl DerefMut for CalculationResult {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.chips
+	}
+}
+
+impl CalculationResult {
+	pub fn calculate_stat(&self, all_chips: Vec<Chip>) -> Stat {
+		let mut stat = Stat::default();
+		for x in &self.chips {
+			stat += all_chips.get(x.chip_index).unwrap().get_stat();
+		}
+		stat
+	}
+}
+
+#[derive(Clone)]
+pub struct CalculationResultChip {
+	pub chip_index: usize,
+	pub position: Vector2<u8>,
+	pub rotation: MatrixRotation
 }
