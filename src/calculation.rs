@@ -7,13 +7,13 @@ use std::collections::VecDeque;
 use crate::chip::Chip;
 use crate::shape::Shape;
 use strum_macros::EnumString;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 use crate::stat::Stat;
 
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
 	all_chips: &'a Vec<Chip>,
-	chips: VecDeque<usize>,
+	next_chip: usize,
 	base: CalculationResult,
 	config: Config
 }
@@ -22,14 +22,14 @@ impl <'a> CalculationJob<'a> {
 	pub fn new(
 		canvas: Canvas,
 		all_chips: &'a Vec<Chip>,
-		chips: VecDeque<usize>,
+		next_chip: usize,
 		base: CalculationResult,
 		config: Config
 	) -> Self {
 		Self {
 			canvas,
 			all_chips,
-			chips,
+			next_chip,
 			base,
 			config
 		}
@@ -39,27 +39,40 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self) -> Vec<CalculationResult> {
-		let result = calculate(&self.canvas, self.all_chips, &self.chips, &self.base, &self.config);
-		return if result.is_some() {
-			result.unwrap()
-		} else {
-			let mut result = Vec::new();
-			result.push(self.base.clone());
-			result
-		}
+	pub fn calculate(&self) -> Option<Vec<CalculationResult>> {
+		calculate(
+			&self.canvas,
+			self.all_chips,
+			self.next_chip,
+			&self.base,
+			&self.config
+		)
 	}
 }
 
 pub struct GenerateJob<'a> {
 	job: CalculationJob<'a>,
+	x_range: u8,
+	x: u8,
+	y_range: u8,
+	y: u8,
+	matrixes: Vec<MatrixRotationCache>,
 	cache: VecDeque<CalculationJob<'a>>
 }
 
 impl <'a> GenerateJob<'a> {
 	pub fn new(job: CalculationJob<'a>) -> Self {
+		let x_range = job.canvas.size.x;
+		let y_range = job.canvas.size.y;
+		let chip_range = job.next_chip..job.all_chips.len();
+		let matrixes: Vec<MatrixRotationCache> = job.all_chips.iter().map(| x | x.shape.get_rotation_cache().clone()).collect();
 		Self {
 			job,
+			x_range,
+			x: 0,
+			y_range,
+			y: 0,
+			matrixes,
 			cache: VecDeque::with_capacity(4)
 		}
 	}
@@ -70,41 +83,75 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while self.cache.is_empty() {
-			let chip_index = self.job.chips.pop_front();
-			if chip_index.is_none() {
+			if self.x < self.x_range {
+				if self.y < self.y_range {
+					if self.job.next_chip < self.job.all_chips.len() {
+						let chip_index = self.job.next_chip;
+
+						let chip = &self.job.all_chips[chip_index];
+						let mut matrix_rotation_cache = &mut self.matrixes[chip_index];
+						let mut rotation = chip.rotation.clone();
+						for rotation_count in 0..(
+							if self.job.config.rotate {
+								chip.get_max_rotation() + 1
+							} else {
+								1
+							}
+						) {
+							let matrix = matrix_rotation_cache.get_mut(&rotation);
+							if
+							matrix.x_size + self.x > self.job.canvas.size.x ||
+								(matrix.raw_map.len() as u8) + self.y > self.job.canvas.size.y
+							{
+								break;
+							}
+							if let Some(new_canvas) = fit_chip(self.job.canvas.clone(), matrix, self.y as usize) {
+								let mut calculation_result = self.job.base.clone();
+								calculation_result.push(CalculationResultChip {
+									chip_index,
+									position: Vector2::new(self.x, self.y),
+									rotation
+								});
+								if rotation_count != 0 {
+									calculation_result.correction_cost += chip.get_correction_cost();
+								}
+								self.cache.push_back(CalculationJob::new(
+									new_canvas,
+									self.job.all_chips,
+									chip_index + 1,
+									calculation_result,
+									self.job.config
+								));
+							}
+							rotation.rotate_cw90();
+						}
+						self.job.next_chip += 1;
+						continue;
+					} else {
+						self.job.next_chip = 0;
+						self.y += 1;
+					}
+				} else {
+					self.y = 0;
+					self.x += 1;
+					for chip_index in self.job.next_chip..self.job.all_chips.len() {
+						let chip = &self.job.all_chips[chip_index];
+						let matrix_rotation_cache = &mut self.matrixes[chip_index];
+						let mut rotation = chip.rotation.clone();
+						for rotation_count in 0..(
+							if self.job.config.rotate {
+								chip.get_max_rotation() + 1
+							} else {
+								1
+							}
+						) {
+							matrix_rotation_cache.get_mut(&rotation).shr(1);
+						}
+					}
+				}
+			} else {
 				return None;
 			}
-			let chip = self.job.all_chips.get(chip_index.unwrap()).unwrap();
-			let mut chips = self.job.chips.clone();
-			let rotate = self.job.config.rotate;
-			let cache = &mut self.cache;
-			let job = &self.job;
-			try_put(
-				&self.job.canvas,
-				chip,
-				| canvas, pos, rotation | {
-					let mut base = job.base.clone();
-					base.push(CalculationResultChip {
-						chip_index: chip_index.unwrap(),
-						position: pos,
-						rotation
-					});
-					if chip.rotation != rotation {
-						base.correction_cost += chip.get_correction_cost();
-					}
-					cache.push_back(
-						CalculationJob::new(
-							canvas,
-							job.all_chips,
-							job.chips.clone(),
-							base,
-							job.config
-						),
-					);
-					true
-				},
-				&self.job.config
-			)
 		}
 		self.cache.pop_front()
 	}
@@ -113,112 +160,105 @@ impl <'a> Iterator for GenerateJob<'a> {
 fn calculate<'a>(
 	canvas: &Canvas,
 	all_chips: &'a Vec<Chip>,
-	chips: &VecDeque<usize>,
+	mut next_chip: usize,
 	base: &CalculationResult,
 	config: &Config
 ) -> Option<Vec<CalculationResult>> {
-	let mut result = Vec::new();
-	let mut chips = chips.clone();
-	let mut chip_index = chips.pop_front();
+	let mut return_calculation_results = Vec::new();
 
-	while chip_index.is_some() {
-		let chip = all_chips.get(chip_index.unwrap()).unwrap();
-		try_put(
-			canvas,
-			chip,
-			| canvas, position, rotation | {
-				let mut base = base.clone();
-				base.push(CalculationResultChip {
-					chip_index: chip_index.unwrap(),
-					position,
-					rotation
-				});
-				if chip.rotation != rotation {
-					base.correction_cost += chip.get_correction_cost();
+	let mut matrixes: Vec<MatrixRotationCache> = all_chips.iter().map(| x | x.shape.get_rotation_cache().clone()).collect();
+	for x in 0..canvas.size.x {
+		for y in 0..canvas.size.y {
+			for chip_index in next_chip..all_chips.len() {
+				let chip = &all_chips[chip_index];
+				let matrix_rotation_cache = &matrixes[chip_index];
+				let mut rotation = chip.rotation.clone();
+				for rotation_count in 0..(
+					if config.rotate {
+						chip.get_max_rotation() + 1
+					} else {
+						1
+					}
+				) {
+					let matrix = matrix_rotation_cache.get(&rotation);
+					if
+						matrix.x_size + x > canvas.size.x ||
+						(matrix.raw_map.len() as u8) + y > canvas.size.y
+					{
+						break;
+					}
+					if let Some(new_canvas) = fit_chip(canvas.clone(), matrix, y as usize) {
+						let mut calculation_result = base.clone();
+						calculation_result.push(CalculationResultChip {
+							chip_index,
+							position: Vector2::new(x, y),
+							rotation
+						});
+						if rotation_count != 0 {
+							calculation_result.correction_cost += chip.get_correction_cost();
+						}
+						if new_canvas.get_left_space() < config.min_chip_size {
+							return_calculation_results.push(calculation_result);
+							break;
+						}
+						if
+							let Some(mut calculation_results) =
+								calculate(&new_canvas, all_chips, chip_index + 1,
+								            &calculation_result,  config
+								)
+						{
+							return_calculation_results.append(&mut calculation_results);
+						}
+					}
+					rotation.rotate_cw90();
 				}
-				let r = calculate(&canvas, all_chips, &chips, &base, config);
-				if r.is_some() {
-					result.append(&mut r.unwrap());
+			}
+		}
+		for chip_index in next_chip..all_chips.len() {
+			let chip = &all_chips[chip_index];
+			let matrix_rotation_cache = &mut matrixes[chip_index];
+			let mut rotation = chip.rotation.clone();
+			for rotation_count in 0..(
+				if config.rotate {
+					chip.get_max_rotation() + 1
+				} else {
+					1
 				}
-				canvas.get_left_space() != 0
-			},
-			&config
-		);
-		chip_index = chips.pop_front();
-	}
-	if result.is_empty() {
-		result.push(base.clone());
-		return Some(result);
-	}
-	Some(result)
-}
-
-fn try_put(canvas: &Canvas, chip: &Chip, mut on_put: impl FnMut(Canvas, Vector2<u8>, MatrixRotation) -> bool, config: &Config) {
-	let mut matrix_rotation_cache = chip.get_rotation_cache().clone();
-	let mut rot = *chip.get_rotation();
-
-	__try_put(
-		canvas,
-		matrix_rotation_cache.get_mut(&rot),
-		|canvas, pos | on_put.call_mut((canvas, pos, rot)),
-		config.allow_space
-	);
-
-	if config.rotate {
-		for _ in 0..chip.get_max_rotation() {
-			rot.rotate_cw90();
-			__try_put(
-				canvas,
-				matrix_rotation_cache.get_mut(&rot),
-				|canvas, pos | on_put.call_mut((canvas, pos, rot)),
-				config.allow_space
-			);
+			) {
+				matrix_rotation_cache.get_mut(&rotation).shr(1);
+			}
 		}
 	}
 
+	if return_calculation_results.is_empty() {
+		None
+	} else {
+		Some(return_calculation_results)
+	}
 }
 
-fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool, allow_space: bool) {
-	for x in 0..canvas.size.x {
-		if matrix.x_size + x > canvas.size.x {
+#[inline(always)]
+fn fit_chip(mut canvas: Canvas, matrix: &Matrix, y: usize) -> Option<Canvas> {
+	let mut fit = true;
+	for i in 0..matrix.raw_map.len() {
+		if canvas.raw_map[i + y as usize] & matrix.raw_map[i] == 0b0 {
+			canvas.raw_map[i + y as usize] |= matrix.raw_map[i];
+		} else {
+			fit = false;
 			break;
 		}
-		for y in 0..canvas.size.y {
-			if (matrix.raw_map.len() as u8) + y > canvas.size.y {
-				break;
-			}
-			let mut new_canvas = canvas.clone();
-			let mut fit = true;
-			for i in 0..matrix.raw_map.len() {
-				if new_canvas.raw_map[i + y as usize] & matrix.raw_map[i] == 0b0 {
-					new_canvas.raw_map[i + y as usize] |= matrix.raw_map[i];
-				} else {
-					fit = false;
-					break;
-				}
-			}
-			if fit {
-				let pos = Vector2::new(x, y);
-				if !on_put.call_mut((new_canvas, pos)) {
-					return;
-				}
-				if !allow_space {
-					return;
-				}
-			}
-		}
-		matrix.shr(1);
 	}
-	return;
+	if fit {
+		Some(canvas)
+	} else {
+		None
+	}
 }
-
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
-	pub max_left_space: u8,
+	pub min_chip_size: u8,
 	pub rotate: bool,
-	pub allow_space: bool
 }
 
 #[derive(Debug, EnumString)]
