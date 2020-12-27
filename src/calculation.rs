@@ -39,12 +39,13 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self) -> Option<Vec<CalculationResult>> {
+	pub fn calculate<F: FnMut(CalculationResult)>(&self, f: &mut F) {
 		calculate(
 			&self.canvas,
 			self.all_chips,
 			self.next_chip,
 			&self.base,
+			f,
 			&self.config
 		)
 	}
@@ -92,7 +93,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 						let mut matrix_rotation_cache = &mut self.matrixes[chip_index];
 						let mut rotation = Cw0;
 						for rotation_count in 0..=(
-							if config.rotate {
+							if self.job.config.rotate {
 								chip.get_max_rotation()
 							} else {
 								rotation = chip.rotation.clone();
@@ -106,7 +107,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 							{
 								break;
 							}
-							if let Some(new_canvas) = fit_chip(self.job.canvas.clone(), matrix, self.y as usize) {
+							if let Some(new_canvas) = fit_chip(self.job.canvas.clone(), matrix, self.y) {
 								let mut calculation_result = self.job.base.clone();
 								calculation_result.push(CalculationResultChip {
 									chip_index,
@@ -139,7 +140,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 						let matrix_rotation_cache = &mut self.matrixes[chip_index];
 						let mut rotation = Cw0;
 						for _ in 0..=(
-							if config.rotate {
+							if self.job.config.rotate {
 								chip.get_max_rotation()
 							} else {
 								rotation = chip.rotation.clone();
@@ -159,14 +160,15 @@ impl <'a> Iterator for GenerateJob<'a> {
 	}
 }
 
-fn calculate<'a>(
+#[inline(always)]
+fn calculate<'a, F: FnMut(CalculationResult)>(
 	canvas: &Canvas,
 	all_chips: &'a Vec<Chip>,
 	mut next_chip: usize,
 	base: &CalculationResult,
+	f: &mut F,
 	config: &Config
-) -> Option<Vec<CalculationResult>> {
-	let mut return_calculation_results = Vec::new();
+) {
 
 	let mut matrixes: Vec<MatrixRotationCache> = all_chips.iter().map(| x | x.shape.get_rotation_cache().clone()).collect();
 	for x in 0..canvas.size.x {
@@ -190,7 +192,7 @@ fn calculate<'a>(
 					{
 						break;
 					}
-					if let Some(new_canvas) = fit_chip(canvas.clone(), matrix, y as usize) {
+					if let Some(new_canvas) = fit_chip(canvas.clone(), matrix, y) {
 						let mut calculation_result = base.clone();
 						calculation_result.push(CalculationResultChip {
 							chip_index,
@@ -201,22 +203,18 @@ fn calculate<'a>(
 							calculation_result.correction_cost += chip.get_correction_cost();
 						}
 						if new_canvas.get_left_space() < config.min_chip_size {
-							return_calculation_results.push(calculation_result);
+							f(calculation_result);
 							break;
 						}
-						if
-							let Some(mut calculation_results) =
-								calculate(&new_canvas, all_chips, chip_index + 1,
-								            &calculation_result,  config
-								)
-						{
-							return_calculation_results.append(&mut calculation_results);
-						}
+						calculate(&new_canvas, all_chips, chip_index + 1,
+						          &calculation_result,  f, config
+						);
 					}
 					rotation.rotate_cw90();
 				}
 			}
 		}
+
 		for chip_index in next_chip..all_chips.len() {
 			let chip = &all_chips[chip_index];
 			let matrix_rotation_cache = &mut matrixes[chip_index];
@@ -233,17 +231,12 @@ fn calculate<'a>(
 				rotation.rotate_cw90();
 			}
 		}
-	}
 
-	if return_calculation_results.is_empty() {
-		None
-	} else {
-		Some(return_calculation_results)
 	}
 }
 
 #[inline(always)]
-fn fit_chip(mut canvas: Canvas, matrix: &Matrix, y: usize) -> Option<Canvas> { //칩 대입
+fn fit_chip(mut canvas: Canvas, matrix: &Matrix, y: u8) -> Option<Canvas> { //칩 대입
 	let mut fit = true;
 	for i in 0..matrix.raw_map.len() {
 		if canvas.raw_map[i + y as usize] & matrix.raw_map[i] == 0b0 {
@@ -375,7 +368,7 @@ impl Board {
 }
 
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct CalculationResult {
 	pub chips: Vec<CalculationResultChip>,
 	pub correction_cost: usize
@@ -392,6 +385,15 @@ impl Deref for CalculationResult {
 impl DerefMut for CalculationResult {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.chips
+	}
+}
+
+impl Default for CalculationResult {
+	fn default() -> Self {
+		Self {
+			chips: Vec::with_capacity(8),
+			correction_cost: 0
+		}
 	}
 }
 

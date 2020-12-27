@@ -510,7 +510,6 @@ impl Shape {
 lazy_static::lazy_static! {
 pub static ref MAX_ROTATION: Vec<u8> = {
 	let mut map: Vec<u8> = Vec::with_capacity(39);
-	map.push(0);
 	for x in Shape::into_enum_iter() {
 		let x: Shape = x;
 		if x == Shape::NONE {

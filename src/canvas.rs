@@ -16,4 +16,11 @@ impl Canvas {
 		}
 		left_space
 	}
+
+	pub fn mvl(&mut self) {
+		for i in 0..self.raw_map.len() as usize {
+			self.raw_map[i] <<= 1;
+			self.raw_map[i] |= 0b1;
+		}
+	}
 }
