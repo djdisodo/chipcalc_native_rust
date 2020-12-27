@@ -1,5 +1,5 @@
 use crate::canvas::Canvas;
-use crate::matrix::{MatrixRotationCache, Matrix};
+use crate::matrix::{MatrixRotationCache, Matrix, Rotation};
 use crate::vector2::Vector2;
 use crate::matrix::MatrixRotation::{Cw0, Cw180, Cw90, Cw270};
 use crate::matrix::MatrixRotation;
@@ -90,12 +90,13 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 						let chip = &self.job.all_chips[chip_index];
 						let mut matrix_rotation_cache = &mut self.matrixes[chip_index];
-						let mut rotation = chip.rotation.clone();
-						for rotation_count in 0..(
-							if self.job.config.rotate {
-								chip.get_max_rotation() + 1
+						let mut rotation = Cw0;
+						for rotation_count in 0..=(
+							if config.rotate {
+								chip.get_max_rotation()
 							} else {
-								1
+								rotation = chip.rotation.clone();
+								0
 							}
 						) {
 							let matrix = matrix_rotation_cache.get_mut(&rotation);
@@ -126,7 +127,6 @@ impl <'a> Iterator for GenerateJob<'a> {
 							rotation.rotate_cw90();
 						}
 						self.job.next_chip += 1;
-						continue;
 					} else {
 						self.job.next_chip = 0;
 						self.y += 1;
@@ -137,15 +137,17 @@ impl <'a> Iterator for GenerateJob<'a> {
 					for chip_index in self.job.next_chip..self.job.all_chips.len() {
 						let chip = &self.job.all_chips[chip_index];
 						let matrix_rotation_cache = &mut self.matrixes[chip_index];
-						let mut rotation = chip.rotation.clone();
-						for rotation_count in 0..(
-							if self.job.config.rotate {
-								chip.get_max_rotation() + 1
+						let mut rotation = Cw0;
+						for _ in 0..=(
+							if config.rotate {
+								chip.get_max_rotation()
 							} else {
-								1
+								rotation = chip.rotation.clone();
+								0
 							}
 						) {
 							matrix_rotation_cache.get_mut(&rotation).shr(1);
+							rotation.rotate_cw90();
 						}
 					}
 				}
@@ -172,12 +174,13 @@ fn calculate<'a>(
 			for chip_index in next_chip..all_chips.len() {
 				let chip = &all_chips[chip_index];
 				let matrix_rotation_cache = &matrixes[chip_index];
-				let mut rotation = chip.rotation.clone();
-				for rotation_count in 0..(
+				let mut rotation = Cw0;
+				for rotation_count in 0..=(
 					if config.rotate {
-						chip.get_max_rotation() + 1
+						chip.get_max_rotation()
 					} else {
-						1
+						rotation = chip.rotation.clone();
+						0
 					}
 				) {
 					let matrix = matrix_rotation_cache.get(&rotation);
@@ -217,15 +220,17 @@ fn calculate<'a>(
 		for chip_index in next_chip..all_chips.len() {
 			let chip = &all_chips[chip_index];
 			let matrix_rotation_cache = &mut matrixes[chip_index];
-			let mut rotation = chip.rotation.clone();
-			for rotation_count in 0..(
+			let mut rotation = Cw0;
+			for _ in 0..=(
 				if config.rotate {
-					chip.get_max_rotation() + 1
+					chip.get_max_rotation()
 				} else {
-					1
+					rotation = chip.rotation.clone();
+					0
 				}
 			) {
 				matrix_rotation_cache.get_mut(&rotation).shr(1);
+				rotation.rotate_cw90();
 			}
 		}
 	}
@@ -238,7 +243,7 @@ fn calculate<'a>(
 }
 
 #[inline(always)]
-fn fit_chip(mut canvas: Canvas, matrix: &Matrix, y: usize) -> Option<Canvas> {
+fn fit_chip(mut canvas: Canvas, matrix: &Matrix, y: usize) -> Option<Canvas> { //칩 대입
 	let mut fit = true;
 	for i in 0..matrix.raw_map.len() {
 		if canvas.raw_map[i + y as usize] & matrix.raw_map[i] == 0b0 {
