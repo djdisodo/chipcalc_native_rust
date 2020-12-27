@@ -44,18 +44,18 @@ impl Chip {
 		}
 	}
 
-	pub fn from_json(value: Value) -> Option<Self> {
+	pub fn from_json(value: &Value) -> Option<Self> {
 		let id: u32 = value["id"].as_str().unwrap().parse().unwrap();
 		let mut shape_info = value["shape_info"].as_str().unwrap().split(",");
 		let rotation = MatrixRotation::from_u32(shape_info.next().unwrap().parse().unwrap()).unwrap();
-		let dmg: i32 = value["assist_damage"].as_i64().unwrap() as i32;
-		let brk: i32 = value["assist_def_break"].as_i64().unwrap() as i32;
-		let hit: i32 = value["assist_hit"].as_i64().unwrap() as i32;
-		let rld: i32 = value["assist_reload"].as_i64().unwrap() as i32;
+		let dmg: i32 = value["assist_damage"].as_str().unwrap().parse().unwrap();
+		let brk: i32 = value["assist_def_break"].as_str().unwrap().parse().unwrap();
+		let hit: i32 = value["assist_hit"].as_str().unwrap().parse().unwrap();
+		let rld: i32 = value["assist_reload"].as_str().unwrap().parse().unwrap();
 		let pt = Stat::new(dmg, brk, hit, rld);
 		let rank: usize = value["chip_id"].as_str().unwrap()[0..1].parse().unwrap();
-		let level: i32 = value["chip_level"].as_i64().unwrap() as i32;
-		let color = Color::from_i64(value["color_id"].as_i64().unwrap()).unwrap();
+		let level: i32 = value["chip_level"].as_str().unwrap().parse().unwrap();
+		let color = Color::from_i64(value["color_id"].as_str().unwrap().parse().unwrap()).unwrap();
 		let shape: Shape = Shape::from_u32(value["grid_id"].as_str().unwrap().parse().unwrap()).unwrap();
 		Some(Self {
 			id,

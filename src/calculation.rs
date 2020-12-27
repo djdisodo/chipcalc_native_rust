@@ -13,7 +13,7 @@ use crate::stat::Stat;
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
 	all_chips: &'a Vec<Chip>,
-	chips: VecDeque<usize>,
+	next_chip: usize,
 	base: CalculationResult,
 	config: Config
 }
@@ -22,14 +22,14 @@ impl <'a> CalculationJob<'a> {
 	pub fn new(
 		canvas: Canvas,
 		all_chips: &'a Vec<Chip>,
-		chips: VecDeque<usize>,
+		next_chip: usize,
 		base: CalculationResult,
 		config: Config
 	) -> Self {
 		Self {
 			canvas,
 			all_chips,
-			chips,
+			next_chip,
 			base,
 			config
 		}
@@ -39,15 +39,8 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self) -> Vec<CalculationResult> {
-		let result = calculate(&self.canvas, self.all_chips, &self.chips, &self.base, &self.config);
-		return if result.is_some() {
-			result.unwrap()
-		} else {
-			let mut result = Vec::new();
-			result.push(self.base.clone());
-			result
-		}
+	pub fn calculate(&self) -> Option<Vec<CalculationResult>> {
+		calculate(&self.canvas, self.all_chips, self.next_chip, &self.base, &self.config)
 	}
 }
 
@@ -70,41 +63,41 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while self.cache.is_empty() {
-			let chip_index = self.job.chips.pop_front();
-			if chip_index.is_none() {
+			let chip_index = self.job.next_chip;
+			self.job.next_chip += 1;
+			if let Some(chip) = self.job.all_chips.get(chip_index) {
+				let cache = &mut self.cache;
+				let job = &self.job;
+				try_put(
+					&self.job.canvas,
+					chip,
+					| canvas, pos, rotation | {
+						let mut base = job.base.clone();
+						base.push(CalculationResultChip {
+							chip_index,
+							position: pos,
+							rotation
+						});
+						if chip.rotation != rotation {
+							base.correction_cost += chip.get_correction_cost();
+						}
+						cache.push_back(
+							CalculationJob::new(
+								canvas,
+								job.all_chips,
+								job.next_chip,
+								base,
+								job.config
+							),
+						);
+						false
+					},
+					&self.job.config
+				)
+			} else {
 				return None;
 			}
-			let chip = self.job.all_chips.get(chip_index.unwrap()).unwrap();
-			let mut chips = self.job.chips.clone();
-			let rotate = self.job.config.rotate;
-			let cache = &mut self.cache;
-			let job = &self.job;
-			try_put(
-				&self.job.canvas,
-				chip,
-				| canvas, pos, rotation | {
-					let mut base = job.base.clone();
-					base.push(CalculationResultChip {
-						chip_index: chip_index.unwrap(),
-						position: pos,
-						rotation
-					});
-					if chip.rotation != rotation {
-						base.correction_cost += chip.get_correction_cost();
-					}
-					cache.push_back(
-						CalculationJob::new(
-							canvas,
-							job.all_chips,
-							job.chips.clone(),
-							base,
-							job.config
-						),
-					);
-					true
-				},
-				&self.job.config
-			)
+
 		}
 		self.cache.pop_front()
 	}
@@ -113,72 +106,69 @@ impl <'a> Iterator for GenerateJob<'a> {
 fn calculate<'a>(
 	canvas: &Canvas,
 	all_chips: &'a Vec<Chip>,
-	chips: &VecDeque<usize>,
+	mut next_chip: usize,
 	base: &CalculationResult,
 	config: &Config
 ) -> Option<Vec<CalculationResult>> {
 	let mut result = Vec::new();
-	let mut chips = chips.clone();
-	let mut chip_index = chips.pop_front();
 
-	while chip_index.is_some() {
-		let chip = all_chips.get(chip_index.unwrap()).unwrap();
+	while let Some(chip) = all_chips.get(next_chip) {
+		let chip_index = next_chip;
+		next_chip += 1;
 		try_put(
 			canvas,
 			chip,
 			| canvas, position, rotation | {
 				let mut base = base.clone();
 				base.push(CalculationResultChip {
-					chip_index: chip_index.unwrap(),
+					chip_index,
 					position,
 					rotation
 				});
 				if chip.rotation != rotation {
 					base.correction_cost += chip.get_correction_cost();
 				}
-				let r = calculate(&canvas, all_chips, &chips, &base, config);
-				if r.is_some() {
-					result.append(&mut r.unwrap());
+				if canvas.get_left_space() < config.min_chip_size {
+					result.push(base);
+					return false;
 				}
-				canvas.get_left_space() != 0
+				if let Some(mut r) = calculate(&canvas, all_chips, next_chip, &base, config) {
+					result.append(&mut r);
+				}
+				false
 			},
 			&config
 		);
-		chip_index = chips.pop_front();
 	}
 	if result.is_empty() {
-		result.push(base.clone());
-		return Some(result);
+		return None;
 	}
 	Some(result)
 }
 
 fn try_put(canvas: &Canvas, chip: &Chip, mut on_put: impl FnMut(Canvas, Vector2<u8>, MatrixRotation) -> bool, config: &Config) {
 	let mut matrix_rotation_cache = chip.get_rotation_cache().clone();
-	let mut rot = *chip.get_rotation();
 
-	__try_put(
-		canvas,
-		matrix_rotation_cache.get_mut(&rot),
-		|canvas, pos | on_put.call_mut((canvas, pos, rot)),
-		config.allow_space
-	);
-
-	if config.rotate {
-		for _ in 0..chip.get_max_rotation() {
-			rot.rotate_cw90();
-			__try_put(
-				canvas,
-				matrix_rotation_cache.get_mut(&rot),
-				|canvas, pos | on_put.call_mut((canvas, pos, rot)),
-				config.allow_space
-			);
+	let mut rotation = Cw0;
+	for rotation_count in 0..=(
+		if config.rotate {
+			chip.get_max_rotation()
+		} else {
+			rotation = chip.rotation;
+			0
 		}
+	) {
+		__try_put(
+			canvas,
+			matrix_rotation_cache.get_mut(&rotation),
+			|canvas, pos | on_put.call_mut((canvas, pos, rotation))
+		);
+		rotation.rotate_cw90();
 	}
 
 }
 
-fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool, allow_space: bool) {
+fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
 	for x in 0..canvas.size.x {
 		if matrix.x_size + x > canvas.size.x {
 			break;
@@ -199,12 +189,10 @@ fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas
 			}
 			if fit {
 				let pos = Vector2::new(x, y);
-				if !on_put.call_mut((new_canvas, pos)) {
+				if !on_put(new_canvas, pos) {
 					return;
 				}
-				if !allow_space {
-					return;
-				}
+				return;
 			}
 		}
 		matrix.shr(1);
@@ -216,9 +204,8 @@ fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
-	pub max_left_space: u8,
-	pub rotate: bool,
-	pub allow_space: bool
+	pub min_chip_size: u8,
+	pub rotate: bool
 }
 
 #[derive(Debug, EnumString)]
