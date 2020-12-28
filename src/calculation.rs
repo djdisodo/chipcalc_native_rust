@@ -7,13 +7,12 @@ use std::collections::VecDeque;
 use crate::chip::Chip;
 use crate::shape::Shape;
 use strum_macros::EnumString;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 use crate::stat::Stat;
 
 pub struct CalculationJob<'a> {
 	canvas: Canvas,
 	all_chips: &'a Vec<Chip>,
-	next_chip: usize,
 	base: CalculationResult,
 	config: Config
 }
@@ -22,14 +21,12 @@ impl <'a> CalculationJob<'a> {
 	pub fn new(
 		canvas: Canvas,
 		all_chips: &'a Vec<Chip>,
-		next_chip: usize,
 		base: CalculationResult,
 		config: Config
 	) -> Self {
 		Self {
 			canvas,
 			all_chips,
-			next_chip,
 			base,
 			config
 		}
@@ -39,20 +36,23 @@ impl <'a> CalculationJob<'a> {
 		GenerateJob::new(self)
 	}
 
-	pub fn calculate(&self) -> Option<Vec<CalculationResult>> {
-		calculate(&self.canvas, self.all_chips, self.next_chip, &self.base, &self.config)
+	pub fn calculate<F: FnMut(CalculationResult)>(&self, on_found: &mut F) {
+		calculate(&self.canvas, self.all_chips, &self.base, on_found, &self.config)
 	}
 }
 
 pub struct GenerateJob<'a> {
 	job: CalculationJob<'a>,
+	chips: Range<usize>,
 	cache: VecDeque<CalculationJob<'a>>
 }
 
 impl <'a> GenerateJob<'a> {
 	pub fn new(job: CalculationJob<'a>) -> Self {
+		let chips = 0..job.all_chips.len();
 		Self {
 			job,
+			chips,
 			cache: VecDeque::with_capacity(4)
 		}
 	}
@@ -63,37 +63,36 @@ impl <'a> Iterator for GenerateJob<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while self.cache.is_empty() {
-			let chip_index = self.job.next_chip;
-			self.job.next_chip += 1;
-			if let Some(chip) = self.job.all_chips.get(chip_index) {
-				let cache = &mut self.cache;
-				let job = &self.job;
-				try_put(
-					&self.job.canvas,
-					chip,
-					| canvas, pos, rotation | {
-						let mut base = job.base.clone();
-						base.push(CalculationResultChip {
-							chip_index,
-							position: pos,
-							rotation
-						});
-						if chip.rotation != rotation {
-							base.correction_cost += chip.get_correction_cost();
-						}
-						cache.push_back(
-							CalculationJob::new(
-								canvas,
-								job.all_chips,
-								job.next_chip,
-								base,
-								job.config
-							),
-						);
-						false
-					},
-					&self.job.config
-				)
+			if let Some(chip_index) = self.chips.next() {
+				let chip = &self.job.all_chips[chip_index];
+				if !self.job.base.is_used(chip_index) {
+					let cache = &mut self.cache;
+					let job = &self.job;
+					try_put(
+						&self.job.canvas,
+						chip,
+						&mut | canvas, pos, rotation | {
+							let mut base = job.base.clone();
+							base.push(CalculationResultChip {
+								chip_index,
+								position: pos,
+								rotation
+							});
+							if chip.rotation != rotation {
+								base.correction_cost += chip.get_correction_cost();
+							}
+							cache.push_back(
+								CalculationJob::new(
+									canvas,
+									job.all_chips,
+									base,
+									job.config
+								),
+							);
+						},
+						&self.job.config
+					)
+				}
 			} else {
 				return None;
 			}
@@ -103,22 +102,23 @@ impl <'a> Iterator for GenerateJob<'a> {
 	}
 }
 
-fn calculate<'a>(
+#[inline(always)]
+fn calculate<'a, F: FnMut(CalculationResult)>(
 	canvas: &Canvas,
 	all_chips: &'a Vec<Chip>,
-	mut next_chip: usize,
 	base: &CalculationResult,
+	on_found: &mut F,
 	config: &Config
-) -> Option<Vec<CalculationResult>> {
-	let mut result = Vec::new();
-
-	while let Some(chip) = all_chips.get(next_chip) {
-		let chip_index = next_chip;
-		next_chip += 1;
+) {
+	for chip_index in 0..all_chips.len() {
+		if base.is_used(chip_index) {
+			continue;
+		}
+		let chip = &all_chips[chip_index];
 		try_put(
 			canvas,
 			chip,
-			| canvas, position, rotation | {
+			&mut | canvas, position, rotation | {
 				let mut base = base.clone();
 				base.push(CalculationResultChip {
 					chip_index,
@@ -129,24 +129,17 @@ fn calculate<'a>(
 					base.correction_cost += chip.get_correction_cost();
 				}
 				if canvas.get_left_space() < config.min_chip_size {
-					result.push(base);
-					return false;
+					on_found(base);
+					return
 				}
-				if let Some(mut r) = calculate(&canvas, all_chips, next_chip, &base, config) {
-					result.append(&mut r);
-				}
-				false
+				calculate(&canvas, all_chips, &base, on_found, config)
 			},
 			&config
 		);
 	}
-	if result.is_empty() {
-		return None;
-	}
-	Some(result)
 }
-
-fn try_put(canvas: &Canvas, chip: &Chip, mut on_put: impl FnMut(Canvas, Vector2<u8>, MatrixRotation) -> bool, config: &Config) {
+#[inline(always)]
+fn try_put<F: FnMut(Canvas, Vector2<u8>, MatrixRotation)>(canvas: &Canvas, chip: &Chip, on_put: &mut F , config: &Config) {
 	let mut matrix_rotation_cache = chip.get_rotation_cache().clone();
 
 	let mut rotation = Cw0;
@@ -161,14 +154,14 @@ fn try_put(canvas: &Canvas, chip: &Chip, mut on_put: impl FnMut(Canvas, Vector2<
 		__try_put(
 			canvas,
 			matrix_rotation_cache.get_mut(&rotation),
-			|canvas, pos | on_put.call_mut((canvas, pos, rotation))
+			&mut |canvas, pos | on_put.call_mut((canvas, pos, rotation))
 		);
 		rotation.rotate_cw90();
 	}
 
 }
-
-fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas, Vector2<u8>) -> bool) {
+#[inline(always)]
+fn __try_put<F: FnMut(Canvas, Vector2<u8>)>(canvas: &Canvas, matrix: &mut Matrix, on_put: &mut F) {
 	for x in 0..canvas.size.x {
 		if matrix.x_size + x > canvas.size.x {
 			break;
@@ -189,9 +182,7 @@ fn __try_put(canvas: &Canvas, matrix: &mut Matrix, mut on_put: impl FnMut(Canvas
 			}
 			if fit {
 				let pos = Vector2::new(x, y);
-				if !on_put(new_canvas, pos) {
-					return;
-				}
+				on_put(new_canvas, pos);
 				return;
 			}
 		}
@@ -317,10 +308,11 @@ impl Board {
 }
 
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct CalculationResult {
 	pub chips: Vec<CalculationResultChip>,
-	pub correction_cost: usize
+	pub correction_cost: usize,
+	pub left_size: u8
 }
 
 impl Deref for CalculationResult {
@@ -338,12 +330,25 @@ impl DerefMut for CalculationResult {
 }
 
 impl CalculationResult {
+	pub fn new(canvas: &Canvas) -> Self {
+		Self {
+			chips: Default::default(),
+			correction_cost: 0,
+			left_size: canvas.get_left_space()
+		}
+	}
+
 	pub fn calculate_stat(&self, all_chips: Vec<Chip>) -> Stat {
 		let mut stat = Stat::default();
 		for x in &self.chips {
 			stat += all_chips.get(x.chip_index).unwrap().get_stat();
 		}
 		stat
+	}
+
+	#[inline(always)]
+	pub fn is_used(&self, chip_index: usize) -> bool {
+		self.iter().find(| x | x.chip_index == chip_index).is_some()
 	}
 }
 
