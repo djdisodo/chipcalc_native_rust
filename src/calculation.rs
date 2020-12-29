@@ -73,6 +73,7 @@ impl <'a> Iterator for GenerateJob<'a> {
 						chip,
 						&mut | canvas, pos, rotation | {
 							let mut base = job.base.clone();
+							base.left_size -= chip.get_size();
 							base.push(CalculationResultChip {
 								chip_index,
 								position: pos,
@@ -120,6 +121,7 @@ fn calculate<'a, F: FnMut(CalculationResult)>(
 			chip,
 			&mut | canvas, position, rotation | {
 				let mut base = base.clone();
+				base.left_size -= chip.get_size();
 				base.push(CalculationResultChip {
 					chip_index,
 					position,
@@ -128,7 +130,7 @@ fn calculate<'a, F: FnMut(CalculationResult)>(
 				if chip.rotation != rotation {
 					base.correction_cost += chip.get_correction_cost();
 				}
-				if canvas.get_left_space() < config.min_chip_size {
+				if base.left_size < config.min_chip_size {
 					on_found(base);
 					return
 				}
@@ -332,7 +334,7 @@ impl DerefMut for CalculationResult {
 impl CalculationResult {
 	pub fn new(canvas: &Canvas) -> Self {
 		Self {
-			chips: Default::default(),
+			chips: Vec::with_capacity(8),
 			correction_cost: 0,
 			left_size: canvas.get_left_space()
 		}

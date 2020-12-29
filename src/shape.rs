@@ -77,7 +77,7 @@ impl PartialOrd for Type {
 
 
 impl Shape {
-	pub fn get_size(&self) -> usize {
+	pub fn get_size(&self) -> u8 {
 		let id = *self as u8;
 		if 30 <= id {
 			return 6;
